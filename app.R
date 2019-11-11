@@ -357,7 +357,7 @@ server <- function(input, output, session){
                    Identity,
                    Hsp_align_len,
                    Hsp_bit_score, Evalue) %>%
-            rename(Query=query,
+            dplyr::rename(Query=query,
                    Subject=subject,
                    Subject_len=subject_len,
                    Alignment_Len=Hsp_align_len,
