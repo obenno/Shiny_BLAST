@@ -1,10 +1,11 @@
 library(shinythemes)
-#require(XML)
+##require(XML)
 library(xml2)
 library(tidyverse)
 library(plyr)
 library(dplyr)
 library(DT)
+##library(Biostrings)
 
 db_set <- c("Gmax_275_v2.0.fa",
             "Gmax_275_Wm82.a2.v1.protein_primaryTranscriptOnly.fa")
@@ -284,8 +285,24 @@ server <- function(input, output, session){
             ##}
             remote <- c("") # remote is disabled
             ## Disable multiple input sequence
-            if (str_count(query, ">")>1){
-                stop("Only one input is allowed.")
+            validate(
+                need(str_count(query, ">") == 1, "Only one input is allowed.")
+            )
+            ## Check sequence
+            query_stripped <- query %>% str_replace(., "^>.*\n", "")
+            query_stripped <- str_replace_all(query_stripped, "\n", "")
+            k <- str_split(query_stripped,"")[[1]]
+            DNA_RNA_ALPHABET <- unique(c(Biostrings::DNA_ALPHABET, Biostrings::RNA_ALPHABET,
+                                         tolower(Biostrings::DNA_ALPHABET), tolower(Biostrings::RNA_ALPHABET)))
+            ##message("k is ", k)
+            if (str_detect(input$dbtype,"Proteome")){
+                validate(
+                    need(sum(k %in% Biostrings::AA_ALPHABET) == length(k), "Please provide valid amino acid sequences.")
+                )
+            }else{
+                validate(
+                    need(sum(k %in% DNA_RNA_ALPHABET) == length(k), "Please provide valid DNA/RNA sequences.")
+                )
             }
             ##this makes sure the fasta is formatted properly
             if (startsWith(query, ">")){
@@ -363,7 +380,7 @@ server <- function(input, output, session){
             clicked = input$blastResults_rows_selected
             selected <- parsedresults() %>%
                 unnest(cols=c("Hsp_list")) %>%
-                slice(clicked)
+                dplyr::slice(clicked)
             query <- selected %>%
                 select(query) %>% pull()
             score <- selected %>%
@@ -409,7 +426,7 @@ server <- function(input, output, session){
             clicked = input$blastResults_rows_selected
             selected <- parsedresults() %>%
                 unnest(cols=c("Hsp_list")) %>%
-                slice(clicked)
+                dplyr::slice(clicked)
             #tmp <- selected %>% select(Hsp_query_from)
             
             #print(selected["Hsp_query_from"])
