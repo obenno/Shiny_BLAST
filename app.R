@@ -6,9 +6,9 @@ library(plyr)
 library(dplyr)
 library(DT)
 
-db_set <- c("Gmax_275_Wm82.a2.v1.cds_primaryTranscriptOnly.fa",
+db_set <- c("Gmax_275_v2.0.fa",
             "Gmax_275_Wm82.a2.v1.protein_primaryTranscriptOnly.fa")
-db_path <- c("~/database/Gmax_275_Wm82.a2.v1/annotation/")
+db_path <- c("~/database/Gmax_275_Wm82.a2.v1/assembly/")
 
 ui <- fluidPage(theme = shinytheme("sandstone"),
                 ##tagList(
@@ -20,7 +20,7 @@ ui <- fluidPage(theme = shinytheme("sandstone"),
                 sidebarLayout(
                     ##This block gives us all the inputs:
                     sidebarPanel(
-                        headerPanel('Shiny Blast'),
+                        #headerPanel('Shiny Blast'),
                         textAreaInput('query', 'Input sequence (FASTA):',
                                       value = "", placeholder = "",
                                       width = "100%", height="200px"),
@@ -79,6 +79,9 @@ ui <- fluidPage(theme = shinytheme("sandstone"),
                             #alignment {
                               font-size: 16px;
                               color: black;
+                            }
+                            #selected_alignment {
+                               line-height: 1.5
                             }
                             ")))
 )
@@ -154,9 +157,15 @@ Extract_blastXMLheader <- function(blastout){
 }
 
 Alignment_singleLine <- function(Qstart, Qend, Sstart, Send, Qtext, Stext, middle){
-    L1 <- paste0("Query\t",Qstart,"\t",Qtext,"\t", Qend, "\n")
-    L2 <- paste0("\t\t", middle, "\n")
-    L3 <- paste0("Sbjct\t", Sstart, "\t", Stext, "\t", Send, "\n")
+    Qstart <- str_pad(Qstart, 15, "right")
+    Qend <- str_pad(Qend, 15, "left")
+    Sstart <- str_pad(Sstart, 15, "right")
+    Send <- str_pad(Send, 15, "left")
+    k1 <- str_pad("", 20, "both")
+    k2 <- str_pad("", 15, "both")
+    L1 <- paste0("Query  ", Qstart, Qtext, Qend, "\n")
+    L2 <- paste0(k1, "  ", middle, k2, "\n")
+    L3 <- paste0("Sbjct  ", Sstart, Stext, Send, "\n")
     paste0(L1, L2, L3)
 }
 
@@ -185,10 +194,17 @@ Adjust_alignment <- function(Qstart, Qend, Sstart, Send, Qtext, Stext, middle, t
         Qstart_adjusted[i+1] <- Qstart + i * text_width
         Qtext_adjusted[i+1] <- substr(Qtext, start, end)
         Qend_adjusted[i+1] <- Qstart_adjusted[i+1] + text_width -1
-        Sstart_adjusted[i+1] <- Sstart+i*text_width
+        ##Sstart_adjusted[i+1] <- Sstart+i*text_width
         Stext_adjusted[i+1] <- substr(Stext, start, end)
-        Send_adjusted[i+1] <- Sstart_adjusted[i+1] + text_width -1
+        ##Send_adjusted[i+1] <- Sstart_adjusted[i+1] + text_width -1
         middle_adjusted[i+1] <- substr(middle, start, end)
+        if(Sstart <= Send){
+            Sstart_adjusted[i+1] <- Sstart+i*text_width
+            Send_adjusted[i+1] <- Sstart_adjusted[i+1] + text_width -1
+        }else{
+            Sstart_adjusted[i+1] <- Sstart - i*text_width
+            Send_adjusted[i+1] <- Sstart_adjusted[i+1] - text_width +1
+        }
         start = start + text_width
         end = start + text_width -1
     }
@@ -267,7 +283,11 @@ server <- function(input, output, session){
             ##  remote <- c("-remote")
             ##}
             remote <- c("") # remote is disabled
-            #this makes sure the fasta is formatted properly
+            ## Disable multiple input sequence
+            if (str_count(query, ">")>1){
+                stop("Only one input is allowed.")
+            }
+            ##this makes sure the fasta is formatted properly
             if (startsWith(query, ">")){
               writeLines(query, tmpInput)
             } else {
@@ -314,56 +334,27 @@ server <- function(input, output, session){
         }
     })
 
-
-    ##parsedresults <- reactive({
-    ##   if (is.null(blastresults())){}
-    ##    else {
-            
-  ##    xmltop = xmlRoot(blastresults())
-  ##    
-  ##    #the first chunk is for multi-fastas
-  ##    results <- xpathApply(blastresults(), '//Iteration',function(row){
-  ##        Query_ID <- getNodeSet(row, 'Iteration_query-def') %>%
-  ##            sapply(., xmlValue)
-  ##        Query_Length <- getNodeSet(row, 'Iteration_query-len') %>%
-  ##            apply(., xmlValue)
-  ##        Subject_ID <- getNodeSet(row, 'Iteration_hits//Hit//Hit_id') %>%
-  ##            sapply(., xmlValue)
-  ##        Hit_length <- getNodeSet(row, 'Iteration_hits//Hit//Hit_len') %>%
-  ##            sapply(., xmlValue)
-  ##        Bitscore <- getNodeSet(row, 'Iteration_hits//Hit//Hit_hsps//Hsp//Hsp_bit-score') %>%
-  ##            sapply(., xmlValue)
-  ##        Evalue <- getNodeSet(row, 'Iteration_hits//Hit//Hit_hsps//Hsp//Hsp_evalue') %>%
-  ##            sapply(., xmlValue)
-  ##        cbind(Query_ID, Subject_ID, Hit_length, Bitscore, Evalue)
-  ##
-  ##    })
-      #this ensures that NAs get added for no hits
-      ##results <-  rbind.fill(lapply(results,function(y){as.data.frame((y),stringsAsFactors=FALSE)}))
-    ##}
- ## })
-  
-  #makes the datatable
-  output$blastResults <- renderDataTable({
-    if (is.null(blastresults())){
-    } else {
-        blastXMLout <- parsedresults()
-        blastXMLout %>%
-            unnest(cols=c("Hsp_list")) %>%
-            mutate(Identity=paste0(round(as.numeric(Hsp_identity)/as.numeric(Hsp_align_len), digits=2)*100,"%")) %>%
-            mutate(Evalue=Hsp_evalue) %>%
-            ##mutate(Evalue=round(as.numeric(Hsp_evalue), digits=5)) %>%
-            select(query, subject, subject_len,
-                   Identity,
-                   Hsp_align_len,
-                   Hsp_bit_score, Evalue) %>%
-            dplyr::rename(Query=query,
-                   Subject=subject,
-                   Subject_len=subject_len,
-                   Alignment_Len=Hsp_align_len,
-                   Bitscore=Hsp_bit_score)
-    }
-  }, selection="single", rownames = FALSE)
+    ## Makes the datatable
+    output$blastResults <- renderDataTable({
+        if (is.null(blastresults())){
+        } else {
+            blastXMLout <- parsedresults()
+            blastXMLout %>%
+                unnest(cols=c("Hsp_list")) %>%
+                mutate(Identity=paste0(round(as.numeric(Hsp_identity)/as.numeric(Hsp_align_len), digits=2)*100,"%")) %>%
+                mutate(Evalue=Hsp_evalue) %>%
+                ##mutate(Evalue=round(as.numeric(Hsp_evalue), digits=5)) %>%
+                select(query, subject, subject_len,
+                       Identity,
+                       Hsp_align_len,
+                       Hsp_bit_score, Evalue) %>%
+                dplyr::rename(Query=query,
+                              Subject=subject,
+                              Subject_len=subject_len,
+                              Alignment_Len=Hsp_align_len,
+                              Bitscore=Hsp_bit_score)
+        }
+    }, selection="single", rownames = FALSE)
   
     ##this chunk gets the alignemnt information from a clicked row
     output$selected_alignment <- renderText({
@@ -373,6 +364,8 @@ server <- function(input, output, session){
             selected <- parsedresults() %>%
                 unnest(cols=c("Hsp_list")) %>%
                 slice(clicked)
+            query <- selected %>%
+                select(query) %>% pull()
             score <- selected %>%
                 select(Hsp_score) %>% pull()
             bitscore <- selected %>%
@@ -384,7 +377,9 @@ server <- function(input, output, session){
             Hsp_align_len <- selected %>%
                 select(Hsp_align_len) %>% pull()
             Hsp_gaps <- selected %>%
-                select(Hsp_gaps) %>% pull()
+                select(Hsp_gaps) %>% pull() %>% as.numeric()
+            Hit_frame <- selected %>%
+                select(Hsp_hit_frame) %>% pull() %>% as.numeric()
             ##tibble(score, bitscore, evalue, Hsp_identity, Hsp_align_len, Hsp_gaps)
             identity <- as.numeric(Hsp_identity)/as.numeric(Hsp_align_len)
             identity <- round(identity, digits = 4)
@@ -395,27 +390,19 @@ server <- function(input, output, session){
             gaps <- round(gaps, digits = 4)
             gaps <- gaps * 100
             gaps <- paste0(gaps, "%")
-            paste0("Score = ", bitscore, " bits (", score, "),  Evalue = ",
+            if(Hit_frame > 0){
+                strand = "Plus / Plus"
+            }else{
+                strand = "Plus / Minus"
+            }
+            paste0("Query: ", query, "<br/>", "Score = ", bitscore, " bits (", score, "),  Evalue = ",
                    evalue, "<br/>", "Identities = ",
                    Hsp_identity, "/", Hsp_align_len, " (", identity, "),  ",
-                   " Gaps = ", Hsp_gaps, "/", Hsp_align_len, " (", gaps, ")")
+                   " Gaps = ", Hsp_gaps, "/", Hsp_align_len, " (", gaps, ")",
+                   "<br/>", "Strand = ", strand)
         }
     })
-##  output$clicked <- renderTable({
-##    if(is.null(input$blastResults_rows_selected)){}
-##    else{
-##      xmltop = xmlRoot(blastresults())
-##      clicked = input$blastResults_rows_selected
-##      tableout<- data.frame(parsedresults()[clicked,])
-##      
-##      tableout <- t(tableout)
-##      names(tableout) <- c("")
-##      rownames(tableout) <- c("Query ID","Hit ID", "Length", "Bit Score", "e-value")
-##      colnames(tableout) <- NULL
-##      data.frame(tableout)
-##    }
-##  },rownames =T,colnames =F)
-    ##
+    
     output$alignment <- renderText({
         if(is.null(input$blastResults_rows_selected)){}
         else{
